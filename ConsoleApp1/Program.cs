@@ -1,5 +1,7 @@
 ﻿using System;
 using Telegram.Bot;
+using Telegram.Bot.Exceptions;
+using Telegram.Bot.Extensions.Polling;
 using Telegram.Bot.Args;
 using Telegram.Bot.Types;
 using Telegram.Bot.Types.Enums;
@@ -11,111 +13,222 @@ using System.IO;
 using FileIO = System.IO.File;
 using static System.Net.Mime.MediaTypeNames;
 using System.Reflection;
+using System.Threading.Tasks;
+using System.Reflection.Metadata;
+using static ConsoleApp1.Program;
+using System.Diagnostics;
 
 namespace ConsoleApp1
 {
-    class Program
+    static class Command
     {
+        public enum Commands 
+        {
+            help,
+            start
+        }
+        public static string GetCommand(Commands command) 
+        {
+            return $"/{command.ToString()}";
+        }
+    }
+
+    public class ChatLibrary
+    {
+        public List<Chat> Chats = new List<Chat>();
+
+        public void AddNewChat(Chat chat) 
+        {
+            if (!Chats.Contains(chat))
+            {
+                Chats.Add(chat);
+            }
+        }
+    }
+    public class TelegramBot 
+    {
+        private TelegramBotClient _telegramBotClient;
+        public TelegramBotClient TelegramBotClient { get { return _telegramBotClient; } }
+        public string VideoLinkId = "BAACAgIAAxkBAAMQYbvnAAE6XE1BLyrzmcgkD6-twnklAAIwEgACfHNZSahmykClLfwCIwQ";
+        private string _tokenFileName;
+        public CancellationTokenSource Cancellation;
+        private ChatLibrary _chats;
+        private string _token;
+        private MessageHandler _messageHandler;
+        public TelegramBot(string tokenFileName, ChatLibrary chatLibrary, MessageHandler messageHandler) 
+        {
+            _messageHandler = messageHandler;
+            _tokenFileName = tokenFileName;
+            _chats = chatLibrary;
+        }
+        public void StartBot() 
+        {
+            var cts = new CancellationTokenSource();
+            var token = cts.Token;
+            Cancellation = cts;
+            var reciveOptions = new ReceiverOptions() { AllowedUpdates = { } };
+            TokensHandler tokens = new TokensHandler();
+            _token = tokens.GetToken(_tokenFileName);
+            _telegramBotClient = new TelegramBotClient(_token);
+            _telegramBotClient.StartReceiving(HandleUpdateAsync,HandleErrorAsync, reciveOptions, token);
+        }
+        public void AddChatToLib(Chat chat) 
+        {
+            _chats.AddNewChat(chat);
+        }
+        async Task HandleUpdateAsync(ITelegramBotClient botClient, Update update, CancellationToken cancellationToken)
+        {
+            if (update.Message is Message message)
+            {
+                await Task.Run(()=>  AddChatToLib(message.Chat));
+                string response =  await Task.Run(()=> _messageHandler.OnMessage(message));
+                await botClient.SendTextMessageAsync(message.Chat, $"{response}");
+            }
+        }
+        async Task HandleErrorAsync(ITelegramBotClient botClient, Exception exception, CancellationToken cancellationToken)
+        {
+            if (exception is ApiRequestException apiRequestException)
+            {
+                await botClient.SendTextMessageAsync(123, apiRequestException.ToString());
+            }
+        }
+        public async void SendFriday() 
+        {
+            await SendFridayMessage(TelegramBotClient, VideoLinkId);
         
-        private static string _token = "";
-        public static TelegramBotClient telegramBotClient;
-        private static Counter _counter;
+        }
+        public async Task SendFridayMessage(ITelegramBotClient botClient,string videoId) 
+        {
+            foreach (var chat in _chats.Chats)
+            {
+                await botClient.SendVideoAsync(chat, video: $"{videoId}");
+            }
+        }
+    }
+    
+    public class MessageHandler 
+    {
+        private string _logger;
+        public MessageHandler() 
+        {
+        
+        }
+        private string _response = "";
+        public string OnMessage(Message message) 
+        {
+
+            Console.WriteLine("Текстовое сообщение боту");
+
+            Console.WriteLine($"Текст сообщения:{message.Text}");
+            switch (message.Text )
+            {
+                case "/help":
+                    _response = $"response, help";
+                    break;
+                 
+                case "/start":
+                    _response = $"response, start";
+                    break;
+
+                default:
+                    _response = $"gg";
+                    
+                    break;
+            }
+            return _response;
+        }
+    }
+    class Program
+    {        
         static void Main(string[] args)
         {
-            string a = GetToken();
-
-            //string a = System.IO.Path.GetDirectoryName($"./Assembly.GetExecutingAssembly().Location");
-            _counter = new Counter();
-            int timeLeft;
-            _counter.SetDefaultTargetTime();
-            telegramBotClient = new TelegramBotClient(_token);
-
-            telegramBotClient.OnMessage+= BotOnMessageRecived;
-            telegramBotClient.StartReceiving();
-            Console.WriteLine("Бот запущен");
-            Console.ReadKey();
-            telegramBotClient.StopReceiving();
-            Console.WriteLine("Бот остановлен");
-            //while (true)
-            {
-                // Console.Clear();
-                // _counter.UpdateTime();
-                // timeLeft  = _counter.GetSecondsLeft();         
-                // Console.WriteLine($"Осталось: {timeLeft}");
-                // Thread.Sleep(500);
-
-            }
-        }
-        private static async void BotOnMessageRecived(object sender, MessageEventArgs messageEventArgs)
-        {
-            string responseText = "";
-            var message = messageEventArgs.Message;
+            ChatLibrary chLib = new ChatLibrary();
+            MessageHandler mH = new MessageHandler();
+            Friday friday = new Friday();
+            TelegramBot bot = new TelegramBot("Token2",chLib,mH);
+            friday.OnSendMessage += bot.SendFriday;
+            bot.StartBot();
+            Console.WriteLine("Бот запущен!");
+            friday.Start(1);
+            Console.ReadLine();
+            bot.Cancellation.Cancel();
+            Console.WriteLine("Бот остановлен!");
             
-            Console.WriteLine($"Сообщение боту ");
-            if(message?.Type == MessageType.Text)
-            {
-                Console.WriteLine("Текстовое сообщение боту");
-                
-                Console.WriteLine($"Текст сообщения:{message.Text}");
-                if (message.Text.Equals("/time"))
-                {
-                    _counter.UpdateTime();
-                    int timeLeft  = _counter.GetSecondsLeft();         
-                    
-                    responseText = $"Осталось: {timeLeft} секунд.";
-                    await telegramBotClient.SendTextMessageAsync(messageEventArgs.Message.Chat.Id,$"{responseText}");
-                }
-                else if (message.Text.Equals("/mood"))
-                {
-                    
-                    responseText = $"Хорошо";
-                    await telegramBotClient.SendTextMessageAsync(messageEventArgs.Message.Chat.Id,$"{responseText}");
-                }
-                else if(message.Text.Equals("/fulltime"))
-                {
-                    _counter.UpdateTime();
-                    
-                    responseText = $"{_counter.ToString()}";
-                    await telegramBotClient.SendTextMessageAsync(messageEventArgs.Message.Chat.Id,$"{responseText}");
-                }
-                else
-                {
-                    responseText = $"Нет ответа!";
-                    await telegramBotClient.SendTextMessageAsync(messageEventArgs.Message.Chat.Id,$"{responseText}");
-                }
-                Console.WriteLine($"ответ бота:{responseText}");
-            }
+            
+            
         }
-        public class Tokens
+
+        public class TokensHandler
         {
             public string Token;
-        }
-        public static string GetToken()
-        {
-            string result;
-            var assembly = Assembly.GetExecutingAssembly();
-            var resourseName = "ConsoleApp1.Token2.json";
-            using (Stream stream = assembly.GetManifestResourceStream(resourseName))
-            using (StreamReader reader = new StreamReader(stream)) 
+            public string GetToken(string fileName)
             {
-                result = reader.ReadToEnd();
+                string result;
+                var assembly = Assembly.GetExecutingAssembly();
+                var resourseName = $"ConsoleApp1.{fileName}.json";
+                using (Stream stream = assembly.GetManifestResourceStream(resourseName))
+                using (StreamReader reader = new StreamReader(stream))
+                {
+                    result = reader.ReadToEnd();
+                }
+                //string jsonFile = FileIO.ReadAllText(result);
+                var token = JsonConvert.DeserializeObject<TokensHandler>(result);
+                return token.Token.ToString();
             }
-            //string jsonFile = FileIO.ReadAllText(result);
-            var token = JsonConvert.DeserializeObject<Tokens>(result);
-            return token.Token.ToString();
-
         }
     }
 
-    public class Firday
+    public class Friday
     {
-        private bool _isFriday;
-        private DateTime _lastDay;
+        public delegate void SendMessageHandler();
+        public event SendMessageHandler OnSendMessage;
+        Timer _timer;
+        private int _timeD= 1000;
+        private bool _isFriday; //is friday - today?
+        private int _lastDay; //last day when friday was
+        public void Process(object obj) 
+        {
+            Console.WriteLine("fridayT");
+            Stopwatch watch = new Stopwatch();
 
+            watch.Start();
 
+            if (IsTodayFriday() && _lastDay != DateTime.UtcNow.Day) 
+                {
+                Console.WriteLine("friday");
+                    SendMessage();
+                    ChangeLastDay();
+                }
+            _timer.Change(Math.Max(0, _timeD - watch.ElapsedMilliseconds), Timeout.Infinite);
 
+        }
+        public void Start(int hoursDelta) 
+        {
+            //delta = hours
+            Console.WriteLine("friday start");
+
+            int timeMs = hoursDelta * 1 * 1 * 1000;
+            _timeD = timeMs;
+            TimerCallback tm = new TimerCallback(Process);
+            _timer = new Timer(tm, null, 1000 * 5, Timeout.Infinite);
+            
+        }
+        private void ChangeLastDay() 
+        {
+            _lastDay = DateTime.UtcNow.Day;
+            Console.WriteLine("friday day");
+
+        }
+        public void SendMessage() 
+        {
+            OnSendMessage.Invoke();
+        } 
+
+        public bool IsTodayFriday() 
+        {
+            return (DateTime.UtcNow.DayOfWeek == DayOfWeek.Friday);
+        }
     }
-
 
     class Counter
     {

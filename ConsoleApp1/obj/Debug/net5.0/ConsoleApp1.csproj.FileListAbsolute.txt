@@ -38,3 +38,6 @@ D:\repos\p1\ConsoleApp1\obj\Debug\net5.0\ConsoleApp1.pdb
 D:\repos\p1\ConsoleApp1\obj\Debug\net5.0\ConsoleApp1.genruntimeconfig.cache
 D:\repos\p1\ConsoleApp1\obj\Debug\net5.0\ConsoleApp1.Properties.Resources.resources
 D:\repos\p1\ConsoleApp1\obj\Debug\net5.0\ConsoleApp1.csproj.GenerateResource.cache
+D:\repos\p1\ConsoleApp1\bin\Debug\net5.0\JetBrains.Annotations.dll
+D:\repos\p1\ConsoleApp1\bin\Debug\net5.0\System.Threading.Channels.dll
+D:\repos\p1\ConsoleApp1\bin\Debug\net5.0\Telegram.Bot.Extensions.Polling.dll
